@@ -1,4 +1,4 @@
-# JJK Cursed Vision
+# Jujutsu Kaisen Gojo
 ### Real-Time Anime Hand Gesture Recognition System
 
 ![JJK Demo](https://giffiles.alphacoders.com/220/220766.gif)
@@ -73,7 +73,7 @@ Frontend:
 Clone the repository:
 
 (https://github.com/Ranjan20Das/Jujutsu_Kaisen-Gojo-) 
-cd jjk-cursed-vision  
+cd Jujutsu_Kaisen-Gojo-
 
 Create virtual environment:
 
@@ -153,8 +153,8 @@ MIT License
 
 ## Author
 
-Built with caffeine, code, and cursed energy  
+Made by Ranjan Das 
 
 ---
 
-Star this repo if you felt like Gojo for even one second
+Star this repo if you Love Gojo Satoru.
