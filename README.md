@@ -72,7 +72,7 @@ Frontend:
 
 Clone the repository:
 
-git clone https://github.com/xianceor/jjk-cursed-vision.git  
+(https://github.com/Ranjan20Das/Jujutsu_Kaisen-Gojo-) 
 cd jjk-cursed-vision  
 
 Create virtual environment:
