@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>JJK: Cursed Technique</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courier New', sans-serif; }
+    
+        #ui {
+            position: absolute;
+            top: 10%;
+            width: 100%;
+            text-align: center;
+            color: #fff;
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        h1 { 
+            font-size: 3rem; margin: 0; letter-spacing: 10px; 
+            font-weight: 900; 
+            text-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+            background: linear-gradient(to bottom, #fff, #888);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        #technique-name { 
+            font-size: 1.2rem; color: #00ffff; margin-top: 15px; 
+            font-weight: bold; letter-spacing: 4px;
+            text-transform: uppercase;
+            text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        }
+
+        
+        #video-container {
+            position: absolute;
+            bottom: 2%;
+            left: 18%;
+            transform: translateX(-50%) scaleX(-1);
+            width: 85vw;
+            max-width: 450px;
+            height: 42vh; 
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            z-index: 20;
+            background-color: #000; 
+            border-radius: 25px;
+            overflow: hidden;
+            box-shadow: 0 0 40px rgba(0,0,0,0.9);
+        }
+
+        video { width: 100%; height: 100%; object-fit: cover; opacity: 0.8; }
+        #output_canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+
+        #grain {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 5;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.08'/%3E%3C/svg%3E");
+        }
+    </style>
+    
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <div id="grain"></div>
+
+    <div id="ui">
+        <h1>呪術廻戦</h1>
+        <div id="technique-name">CURSED ENERGY</div>
+    </div>
+
+    <div id="video-container">
+        <video class="input_video"></video>
+        <canvas id="output_canvas"></canvas>
+    </div>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera.position.z = 55;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+    composer.addPass(bloomPass);
+
+    let animTime = 0;
+    let bloomTarget = 1.0;
+
+    const COUNT = 25000;
+    const geometry = new THREE.BufferGeometry();
+    const positions   = new Float32Array(COUNT * 3);
+    const colors      = new Float32Array(COUNT * 3);
+    const targetPos   = new Float32Array(COUNT * 3);
+    const targetCol   = new Float32Array(COUNT * 3);
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+
+    const mat = new THREE.PointsMaterial({
+        size: 0.35,
+        vertexColors: true,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        depthWrite: false,
+        sizeAttenuation: true
+    });
+
+    const particles = new THREE.Points(geometry, mat);
+    scene.add(particles);
+
+    // RED: dense core + 3 spiral arms in 3D
+    function getRed(i) {
+        if (i < COUNT * 0.12) {
+            const r = Math.random() * 6;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            const heat = 1.0 - r / 6;
+            return { x: r*Math.sin(phi)*Math.cos(theta), y: r*Math.sin(phi)*Math.sin(theta), z: r*Math.cos(phi),
+                     r: Math.min(1, 0.8 + heat * 0.4), g: heat * 0.15, b: 0.0 };
+        }
+        const armCount = 3;
+        const t = (i - COUNT * 0.12) / (COUNT * 0.88);
+        const arm = i % armCount;
+        const angle = t * 18 + (arm * Math.PI * 2 / armCount);
+        const radius = 3 + t * 42;
+        const zSpread = (Math.random() - 0.5) * radius * 0.35;
+        const bright = 1.0 - t * 0.6;
+        return { x: radius*Math.cos(angle), y: radius*Math.sin(angle), z: zSpread,
+                 r: Math.min(1, bright * 0.9), g: bright * 0.04, b: 0.0 };
+    }
+
+    // VOID: event horizon rings + full 3D cosmic sphere
+    function getVoid(i) {
+        if (i < COUNT * 0.08) {
+            const angle = Math.random() * Math.PI * 2;
+            const ringR = 22 + (Math.random() - 0.5) * 2;
+            return { x: ringR*Math.cos(angle), y: ringR*Math.sin(angle), z: (Math.random()-0.5)*1.5,
+                     r: 0.9, g: 0.95, b: 1.0 };
+        }
+        if (i < COUNT * 0.18) {
+            const angle = Math.random() * Math.PI * 2;
+            const ringR = 12 + (Math.random()-0.5)*1.5;
+            return { x: ringR*Math.cos(angle), y: ringR*Math.sin(angle), z: (Math.random()-0.5)*0.8,
+                     r: 0.1, g: 0.5, b: 1.0 };
+        }
+        const radius = 30 + Math.random() * 100;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const d = radius / 130;
+        return {
+            x: radius*Math.sin(phi)*Math.cos(theta),
+            y: radius*Math.sin(phi)*Math.sin(theta),
+            z: radius*Math.cos(phi),
+            r: 0.02, g: 0.2 + d*0.3, b: Math.min(1, 0.6 + d*0.4)
+        };
+    }
+
+    // PURPLE: two orbs colliding + annihilation blast
+    function getPurple(i) {
+        if (i < COUNT * 0.15) {
+            const r = 7 + Math.random() * 5;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            return { x: -18 + r*Math.sin(phi)*Math.cos(theta), y: r*Math.sin(phi)*Math.sin(theta), z: r*Math.cos(phi),
+                     r: 0.05, g: 0.3, b: 1.0 };
+        }
+        if (i < COUNT * 0.3) {
+            const r = 7 + Math.random() * 5;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            return { x: 18 + r*Math.sin(phi)*Math.cos(theta), y: r*Math.sin(phi)*Math.sin(theta), z: r*Math.cos(phi),
+                     r: 1.0, g: 0.05, b: 0.2 };
+        }
+        if (i < COUNT * 0.55) {
+            const r = Math.random() * 13;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            const heat = 1.0 - r/13;
+            return { x: r*Math.sin(phi)*Math.cos(theta), y: r*Math.sin(phi)*Math.sin(theta), z: r*Math.cos(phi),
+                     r: Math.min(1, 0.5 + heat*0.5), g: heat*0.1, b: Math.min(1, 0.7 + heat*0.3) };
+        }
+        const angle = Math.random() * Math.PI * 2;
+        const elev = (Math.random()-0.5) * Math.PI;
+        const dist = 20 + Math.random() * 55;
+        return {
+            x: dist*Math.cos(angle)*Math.cos(elev), y: dist*Math.sin(elev), z: dist*Math.sin(angle)*Math.cos(elev),
+            r: Math.min(1, 0.3 + Math.random()*0.5), g: 0.05, b: Math.min(1, 0.6 + Math.random()*0.4)
+        };
+    }
+
+    // SHRINE: Sukuna's Malevolent Shrine — pagoda tiers, curved horns/claws, red vein sky, teal mirror floor
+    function getShrine(i) {
+
+        // === TEAL MIRROR FLOOR (reflection plane) ===
+        if (i < COUNT * 0.10) {
+            const fx = (Math.random()-0.5)*100, fz = (Math.random()-0.5)*100;
+            const dist = Math.sqrt(fx*fx+fz*fz);
+            const glow = Math.max(0, 1.0 - dist/50);
+            // Teal grid lines
+            const onGrid = (Math.abs(fx % 8) < 0.8 || Math.abs(fz % 8) < 0.8);
+            return { x: fx, y: -20, z: fz,
+                r: onGrid ? 0.0 : 0.0,
+                g: onGrid ? Math.min(1, 0.5+glow*0.5) : glow*0.2,
+                b: onGrid ? Math.min(1, 0.8+glow*0.2) : glow*0.5 };
+        }
+
+        // === PAGODA TIER 1 — wide base (bottom) ===
+        if (i < COUNT * 0.155) {
+            // 4 base columns
+            const col = Math.floor((i - COUNT*0.10) / (COUNT*0.055/4)) % 4;
+            const cx = [-8, 8, -8, 8][col], cz = [-4, -4, 4, 4][col];
+            const hy = -18 + Math.random() * 10;
+            return { x: cx+(Math.random()-0.5)*1.2, y: hy, z: cz+(Math.random()-0.5)*1.2,
+                     r: 0.9, g: 0.25, b: 0.0 };
+        }
+        // Tier 1 roof — wide curved eave
+        if (i < COUNT * 0.19) {
+            const t = Math.random();
+            const eaveW = 14;
+            const side = Math.floor(Math.random()*4);
+            let ex, ez, ey;
+            if (side === 0) { ex = -eaveW/2 + t*eaveW; ez = -6; }
+            else if (side === 1) { ex = eaveW/2; ez = -6 + t*12; }
+            else if (side === 2) { ex = -eaveW/2 + t*eaveW; ez = 6; }
+            else { ex = -eaveW/2; ez = -6 + t*12; }
+            // Curved roof — dips at edges, rises at center
+            const edgeDist = Math.min(Math.abs(ex)/eaveW*2, Math.abs(ez)/6);
+            ey = -8 + edgeDist * 2.5;
+            return { x: ex+(Math.random()-0.5)*0.8, y: ey+(Math.random()-0.5)*0.4, z: ez+(Math.random()-0.5)*0.8,
+                     r: 0.8, g: 0.2, b: 0.0 };
+        }
+
+        // === PAGODA TIER 2 — mid section ===
+        if (i < COUNT * 0.225) {
+            const col = Math.floor((i - COUNT*0.19) / (COUNT*0.035/4)) % 4;
+            const cx = [-5, 5, -5, 5][col], cz = [-2.5, -2.5, 2.5, 2.5][col];
+            const hy = -8 + Math.random() * 8;
+            return { x: cx+(Math.random()-0.5)*0.9, y: hy, z: cz+(Math.random()-0.5)*0.9,
+                     r: 1.0, g: 0.3, b: 0.0 };
+        }
+        // Tier 2 roof
+        if (i < COUNT * 0.255) {
+            const t = Math.random();
+            const eaveW = 10;
+            const side = Math.floor(Math.random()*4);
+            let ex, ez;
+            if (side === 0) { ex = -eaveW/2 + t*eaveW; ez = -4.5; }
+            else if (side === 1) { ex = eaveW/2; ez = -4.5 + t*9; }
+            else if (side === 2) { ex = -eaveW/2 + t*eaveW; ez = 4.5; }
+            else { ex = -eaveW/2; ez = -4.5 + t*9; }
+            const edgeDist = Math.min(Math.abs(ex)/eaveW*2, Math.abs(ez)/4.5);
+            const ey = -0 + edgeDist * 2;
+            return { x: ex+(Math.random()-0.5)*0.7, y: ey+(Math.random()-0.5)*0.3, z: ez+(Math.random()-0.5)*0.7,
+                     r: 0.9, g: 0.25, b: 0.0 };
+        }
+
+        // === PAGODA TIER 3 — narrow top spire ===
+        if (i < COUNT * 0.28) {
+            const col = Math.floor((i - COUNT*0.255) / (COUNT*0.025/4)) % 4;
+            const cx = [-3, 3, -3, 3][col], cz = [-1.5, -1.5, 1.5, 1.5][col];
+            const hy = 0 + Math.random() * 6;
+            return { x: cx+(Math.random()-0.5)*0.7, y: hy, z: cz+(Math.random()-0.5)*0.7,
+                     r: 1.0, g: 0.35, b: 0.05 };
+        }
+        // Tier 3 roof + spire tip
+        if (i < COUNT * 0.305) {
+            if (i < COUNT * 0.296) {
+                const t = Math.random(); const eaveW = 7;
+                const side = Math.floor(Math.random()*4);
+                let ex = 0, ez = 0;
+                if (side === 0) { ex = -eaveW/2 + t*eaveW; ez = -3; }
+                else if (side === 1) { ex = eaveW/2; ez = -3 + t*6; }
+                else if (side === 2) { ex = -eaveW/2 + t*eaveW; ez = 3; }
+                else { ex = -eaveW/2; ez = -3 + t*6; }
+                const edgeDist = Math.min(Math.abs(ex)/eaveW*2, Math.abs(ez)/3);
+                const ey = 6 + edgeDist * 1.5;
+                return { x: ex+(Math.random()-0.5)*0.6, y: ey, z: ez+(Math.random()-0.5)*0.6,
+                         r: 1.0, g: 0.4, b: 0.1 };
+            }
+            // Vertical spire
+            return { x: (Math.random()-0.5)*0.8, y: 8 + Math.random()*4, z: (Math.random()-0.5)*0.8,
+                     r: 1.0, g: 0.5, b: 0.1 };
+        }
+
+        // === CURVED HORNS / CLAWS (6 total — 3 left, 3 right) ===
+        // Each horn is a parametric curve: starts from sides, sweeps up then curves inward over the top
+        if (i < COUNT * 0.43) {
+            const hornTotal = COUNT * (0.43 - 0.305);
+            const hi = i - COUNT * 0.305;
+            const hornIdx = Math.floor(hi / (hornTotal / 6)) % 6;
+            const t = (hi % (hornTotal/6)) / (hornTotal/6);
+
+            // Horn base positions (left side: -x, right side: +x)
+            const isRight = hornIdx >= 3;
+            const hNum = hornIdx % 3; // 0=bottom, 1=mid, 2=top
+
+            const baseX = isRight ? 10 + hNum*3 : -(10 + hNum*3);
+            const baseY = -14 + hNum * 10; // bottom/mid/top
+
+            // Parametric horn curve: sweeps outward then curves over the top like claws
+            const sweep = t * Math.PI * 0.85;
+            const hornLen = 14 + hNum * 4;
+            const dx = isRight ? Math.cos(sweep) : -Math.cos(sweep);
+            const dy = Math.sin(sweep) * 0.9 - t * 0.3; // up then slightly down at tip
+            const dz = (Math.random()-0.5) * (2 + hNum);
+
+            const hornBright = 1.0 - t * 0.3;
+            return {
+                x: baseX + dx * hornLen * t + (Math.random()-0.5)*1.2,
+                y: baseY + dy * hornLen * t + (Math.random()-0.5)*0.8,
+                z: dz,
+                r: Math.min(1, 0.05 + hornBright*0.1),
+                g: Math.min(1, 0.02 + hornBright*0.05),
+                b: Math.min(1, 0.06 + hornBright*0.08)
+            };
+        }
+
+        // === RED CURSED VEIN SKY (top atmosphere) ===
+        if (i < COUNT * 0.60) {
+            // Branching vein network spreading from center-top
+            const vx = (Math.random()-0.5)*90;
+            const vy = 22 + Math.random()*18;
+            const vz = (Math.random()-0.5)*40;
+            // Vein density — more particles near center
+            const centerPull = Math.max(0, 1.0 - Math.abs(vx)/45);
+            return { x: vx, y: vy, z: vz,
+                     r: Math.min(1, 0.4 + centerPull*0.6),
+                     g: 0.0,
+                     b: Math.random() < 0.05 ? 0.1 : 0.0 };
+        }
+        // Vein tendrils — thin red lightning-like branches
+        if (i < COUNT * 0.70) {
+            const branch = Math.floor(Math.random()*8);
+            const bAngle = branch * Math.PI/4;
+            const bt = Math.random();
+            const bLen = 20 + Math.random()*25;
+            const bx = Math.cos(bAngle) * bLen * bt + (Math.random()-0.5)*3;
+            const by = 30 + Math.sin(bt*2)*5 - bt*8;
+            return { x: bx, y: by, z: (Math.random()-0.5)*20,
+                     r: Math.min(1, 0.6+Math.random()*0.4), g: 0.0, b: 0.0 };
+        }
+
+        // === REFLECTION on mirror floor (mirrored pagoda below) ===
+        if (i < COUNT * 0.82) {
+            // Ghostly teal reflection of the pagoda
+            const col2 = Math.floor((i - COUNT*0.70) / (COUNT*0.12/4)) % 4;
+            const cx2 = [-8, 8, -8, 8][col2], cz2 = [-4, -4, 4, 4][col2];
+            const hy2 = -20 - Math.random() * 16; // mirror: goes downward
+            return { x: cx2+(Math.random()-0.5)*2, y: hy2, z: cz2+(Math.random()-0.5)*2,
+                     r: 0.0, g: Math.min(1, 0.3+Math.random()*0.4), b: Math.min(1, 0.5+Math.random()*0.5) };
+        }
+
+        // === AMBIENT CURSED ENERGY mist around base ===
+        const mx = (Math.random()-0.5)*50;
+        const mz = (Math.random()-0.5)*30;
+        const my = -20 + Math.random()*8;
+        const mdist = Math.sqrt(mx*mx+mz*mz);
+        const mfade = Math.max(0, 1-mdist/25);
+        return { x: mx, y: my, z: mz,
+                 r: mfade*0.3, g: mfade*0.05, b: 0.0 };
+    }
+
+    let currentTech = 'neutral';
+    let shakeIntensity = 0;
+    const videoElement = document.querySelector('.input_video');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    let glowColor = '#00ffff';
+
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7 });
+
+    hands.onResults((results) => {
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        let detected = 'neutral';
+        let handDataList = [];
+
+        if (results.multiHandLandmarks && results.multiHandedness) {
+            results.multiHandLandmarks.forEach((lm, idx) => {
+                drawConnectors(canvasCtx, lm, HAND_CONNECTIONS, {color: glowColor, lineWidth: 5});
+                drawLandmarks(canvasCtx, lm, {color: '#fff', lineWidth: 1, radius: 2});
+                const label = results.multiHandedness[idx].label;
+                handDataList.push({ lm, label });
+            });
+
+            handDataList.forEach(({ lm }) => {
+                const isUp = (t, p) => lm[t].y < lm[p].y;
+                const pinch = Math.hypot(lm[8].x - lm[4].x, lm[8].y - lm[4].y);
+                if (pinch < 0.04) detected = 'purple';
+                else if (detected === 'neutral' && isUp(8,6) && !isUp(12,10)) detected = 'red';
+            });
+
+            // Void: RIGHT hand — index + middle crossed, ring + pinky down
+            const rightHand = handDataList.find(h => h.label === 'Left');
+            if (rightHand && detected === 'neutral') {
+                const lm = rightHand.lm;
+                const isUp = (t, p) => lm[t].y < lm[p].y;
+                const crossDist = Math.hypot(lm[8].x - lm[12].x, lm[8].y - lm[12].y);
+                if (crossDist < 0.06 && isUp(8,6) && isUp(12,10) && !isUp(16,14) && !isUp(20,18)) detected = 'void';
+            }
+
+            // Shrine: RIGHT hand open palm — all fingers + thumb up
+            if (detected === 'neutral') {
+                const rightHand2 = handDataList.find(h => h.label === 'Left');
+                if (rightHand2) {
+                    const lm = rightHand2.lm;
+                    const isUp = (t, p) => lm[t].y < lm[p].y;
+                    if (isUp(8,6) && isUp(12,10) && isUp(16,14) && isUp(20,18) && lm[4].x < lm[3].x) detected = 'shrine';
+                }
+            }
+        }
+        updateState(detected);
+    });
+
+    function updateState(tech) {
+        if(currentTech === tech) return;
+        currentTech = tech;
+        const nameEl = document.getElementById('technique-name');
+        shakeIntensity = tech !== 'neutral' ? 0.4 : 0;
+
+        if(tech === 'shrine')      { glowColor = '#ff2200'; nameEl.innerText = "Domain Expansion: Malevolent Shrine"; bloomTarget = 3.0; }
+        else if(tech === 'purple') { glowColor = '#cc00ff'; nameEl.innerText = "Secret Technique: Hollow Purple"; bloomTarget = 4.5; }
+        else if(tech === 'void')   { glowColor = '#00ccff'; nameEl.innerText = "Domain Expansion: Infinite Void"; bloomTarget = 2.2; }
+        else if(tech === 'red')    { glowColor = '#ff3333'; nameEl.innerText = "Reverse Cursed Technique: Red"; bloomTarget = 2.8; }
+        else                       { glowColor = '#00ffff'; nameEl.innerText = "Cursed Energy"; bloomTarget = 1.0; }
+
+        for(let i = 0; i < COUNT; i++) {
+            let p;
+            if(tech === 'neutral') {
+                if(i < COUNT * 0.04) {
+                    const r = 18 + Math.random()*18;
+                    const theta = Math.random()*6.28; const phi = Math.random()*3.14;
+                    p = { x: r*Math.sin(phi)*Math.cos(theta), y: r*Math.sin(phi)*Math.sin(theta), z: r*Math.cos(phi), r: 0.05, g: 0.1, b: 0.3 };
+                } else { p = { x:0, y:0, z:0, r:0, g:0, b:0 }; }
+            }
+            else if(tech === 'red')    p = getRed(i);
+            else if(tech === 'void')   p = getVoid(i);
+            else if(tech === 'purple') p = getPurple(i);
+            else if(tech === 'shrine') p = getShrine(i);
+
+            targetPos[i*3]   = p.x; targetPos[i*3+1]   = p.y; targetPos[i*3+2]   = p.z;
+            targetCol[i*3]   = p.r; targetCol[i*3+1]   = p.g; targetCol[i*3+2]   = p.b;
+        }
+    }
+
+    const cameraUtils = new Camera(videoElement, {
+        onFrame: async () => {
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+            await hands.send({image: videoElement});
+        }, width: 640, height: 480
+    });
+    cameraUtils.start();
+
+    function animate() {
+        requestAnimationFrame(animate);
+        animTime += 0.016;
+
+        let pulse = 0;
+        if (currentTech === 'red')    pulse = Math.sin(animTime * 9) * 0.6;
+        if (currentTech === 'shrine') pulse = Math.sin(animTime * 4) * 0.9;
+        if (currentTech === 'purple') pulse = Math.sin(animTime * 14) * 1.2;
+        if (currentTech === 'void')   pulse = Math.sin(animTime * 2.5) * 0.4;
+        bloomPass.strength += (bloomTarget + pulse - bloomPass.strength) * 0.07;
+
+        const zDrift = currentTech === 'neutral' ? 55 : 48 + Math.sin(animTime * 0.6) * 4;
+        camera.position.z += (zDrift - camera.position.z) * 0.02;
+
+        if (shakeIntensity > 0) {
+            renderer.domElement.style.transform = `translate(${(Math.random()-0.5)*shakeIntensity*35}px, ${(Math.random()-0.5)*shakeIntensity*35}px)`;
+        } else {
+            renderer.domElement.style.transform = 'translate(0,0)';
+        }
+
+        const pos = particles.geometry.attributes.position.array;
+        const col = particles.geometry.attributes.color.array;
+        const lerpSpeed = currentTech === 'purple' ? 0.13 : currentTech === 'void' ? 0.055 : 0.09;
+
+        for(let i = 0; i < COUNT * 3; i++) {
+            pos[i] += (targetPos[i] - pos[i]) * lerpSpeed;
+            col[i] += (targetCol[i] - col[i]) * lerpSpeed;
+        }
+
+        particles.geometry.attributes.position.needsUpdate = true;
+        particles.geometry.attributes.color.needsUpdate = true;
+
+        if (currentTech === 'red') {
+            particles.rotation.z -= 0.007 + Math.sin(animTime * 2.5) * 0.004;
+            particles.rotation.x = Math.sin(animTime * 1.2) * 0.1;
+        } else if (currentTech === 'purple') {
+            particles.rotation.z += 0.018 + Math.sin(animTime * 5) * 0.009;
+            particles.rotation.y += 0.006;
+            particles.rotation.x = Math.sin(animTime * 2.5) * 0.04;
+        } else if (currentTech === 'shrine') {
+            // Very slow majestic rotation — let the scene breathe
+            particles.rotation.y += 0.0015;
+            particles.rotation.x = Math.sin(animTime * 0.3) * 0.02;
+            particles.rotation.z = 0;
+        } else if (currentTech === 'void') {
+            particles.rotation.y += 0.0015;
+            particles.rotation.z += 0.0008;
+            particles.rotation.x = Math.sin(animTime * 0.4) * 0.02;
+        } else {
+            particles.rotation.y += 0.004;
+        }
+
+        composer.render();
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        composer.setSize(window.innerWidth, window.innerHeight);
+    });
+</script>
+</body>
+</html>
