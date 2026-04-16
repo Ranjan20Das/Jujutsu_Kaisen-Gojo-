@@ -7,6 +7,8 @@
 
 A real-time AI-powered hand gesture recognition system inspired by Jujutsu Kaisen, where your hand signs trigger cinematic cursed techniques with immersive 3D particle effects in the browser.
 
+Live demo:-https://jujutsu-kaisen-effect.netlify.app/
+
 ---
 
 ## Features
